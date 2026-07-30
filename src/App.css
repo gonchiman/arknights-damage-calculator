@@ -108,9 +108,57 @@ h1 {
     box-shadow 160ms ease;
 }
 
+.field select {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 34px 11px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  outline: 0;
+  color: var(--text-strong);
+  background: var(--input-bg);
+  font: 600 0.85rem/1.2 var(--sans);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .number-input:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.operator-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.operator-stats > div {
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--input-bg);
+}
+
+.operator-stats dt {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.operator-stats dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .number-input input {
@@ -317,7 +365,8 @@ footer p {
   }
 
   .number-input,
-  .segmented-control {
+  .segmented-control,
+  .field select {
     width: 100%;
   }
 }
