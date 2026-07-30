@@ -5,11 +5,19 @@ import {
   calculateOperatorAttack,
   operators,
   professionLabels,
+  type NormalAttackType,
   type Operator,
   type Profession,
 } from './operators'
 
 type ProfessionFilter = 'ALL' | Profession
+
+const normalAttackLabels: Record<NormalAttackType, string> = {
+  physical: '物理ダメージ',
+  arts: '術ダメージ',
+  healing: '味方への治療',
+  none: '通常時は攻撃しない',
+}
 
 const defaultOperator =
   operators.find((operator) => operator.id === 'char_002_amiya') ?? operators[0]
@@ -94,6 +102,7 @@ function App() {
   const [phaseIndex, setPhaseIndex] = useState(initialPhaseIndex)
   const [level, setLevel] = useState(initialPhase.maxLevel)
   const [enemyDefense, setEnemyDefense] = useState(300)
+  const [enemyResistance, setEnemyResistance] = useState(20)
 
   const filteredOperators = useMemo(
     () =>
@@ -110,16 +119,20 @@ function App() {
   const selectedPhase =
     selectedOperator.phases[phaseIndex] ?? selectedOperator.phases.at(-1)!
   const attack = calculateOperatorAttack(selectedPhase, level)
-  const result = calculateDamage({
-    attack,
-    enemyDefense,
-    enemyResistance: 0,
-    damageType: 'physical',
-  })
+  const damageType = selectedOperator.normalAttackType
+  const dealsDamage = damageType === 'physical' || damageType === 'arts'
+  const result = dealsDamage
+    ? calculateDamage({
+        attack,
+        enemyDefense,
+        enemyResistance,
+        damageType,
+      })
+    : null
   const dps =
-    selectedPhase.attackInterval === 0
-      ? 0
-      : result.damage / selectedPhase.attackInterval
+    result && selectedPhase.attackInterval !== 0
+      ? result.damage / selectedPhase.attackInterval
+      : null
 
   const selectOperator = (operator: Operator) => {
     const nextPhaseIndex = operator.phases.length - 1
@@ -177,7 +190,7 @@ function App() {
             <p className="step">01</p>
             <div>
               <h2 id="input-title">オペレーターと攻撃条件</h2>
-              <p>昇進段階とレベルから基礎攻撃力を自動計算します。</p>
+              <p>レベルに応じた基礎攻撃力と攻撃種別を自動計算します。</p>
             </div>
           </div>
 
@@ -250,16 +263,33 @@ function App() {
                 <dt>攻撃間隔</dt>
                 <dd>{selectedPhase.attackInterval}秒</dd>
               </div>
+              <div>
+                <dt>通常攻撃</dt>
+                <dd>{normalAttackLabels[damageType]}</dd>
+              </div>
             </dl>
 
-            <div className="divider" />
+            {dealsDamage && <div className="divider" />}
 
-            <NumericInput
-              id="defense"
-              label="敵の防御力"
-              value={enemyDefense}
-              onChange={setEnemyDefense}
-            />
+            {damageType === 'physical' && (
+              <NumericInput
+                id="defense"
+                label="敵の防御力"
+                value={enemyDefense}
+                onChange={setEnemyDefense}
+              />
+            )}
+
+            {damageType === 'arts' && (
+              <NumericInput
+                id="resistance"
+                label="敵の術耐性"
+                value={enemyResistance}
+                onChange={setEnemyResistance}
+                max={100}
+                suffix="%"
+              />
+            )}
           </div>
         </section>
 
@@ -268,40 +298,58 @@ function App() {
             <p className="step">02</p>
             <div>
               <h2 id="result-title">通常攻撃の結果</h2>
-              <p>素質・特性・スキルを除いた物理攻撃として計算します。</p>
+              <p>特性による倍率・複数対象などは計算に含めません。</p>
             </div>
           </div>
 
           <div className="result-card" aria-live="polite">
-            <p className="result-label">単発ダメージ</p>
+            <p className="result-label">{normalAttackLabels[damageType]}</p>
             <p className="result-value">
-              {result.damage.toLocaleString('ja-JP')}
+              {result ? result.damage.toLocaleString('ja-JP') : '—'}
             </p>
-            <p className="result-unit">DAMAGE / HIT</p>
+            <p className="result-unit">
+              {result ? 'DAMAGE / HIT' : 'NO DAMAGE CALCULATION'}
+            </p>
           </div>
 
           <dl className="calculation-details">
             <div>
               <dt>DPS</dt>
-              <dd>{dps.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}</dd>
+              <dd>
+                {dps === null
+                  ? '—'
+                  : dps.toLocaleString('ja-JP', {
+                      maximumFractionDigits: 1,
+                    })}
+              </dd>
             </div>
-            <div>
-              <dt>計算式</dt>
-              <dd>{result.formula}</dd>
-            </div>
-            <div>
-              <dt>軽減量</dt>
-              <dd>{result.reduction.toLocaleString('ja-JP')}</dd>
-            </div>
-            <div>
-              <dt>攻撃力に対する割合</dt>
-              <dd>{result.damageRate}%</dd>
-            </div>
+            {result && (
+              <>
+                <div>
+                  <dt>計算式</dt>
+                  <dd>{result.formula}</dd>
+                </div>
+                <div>
+                  <dt>軽減量</dt>
+                  <dd>{result.reduction.toLocaleString('ja-JP')}</dd>
+                </div>
+                <div>
+                  <dt>攻撃力に対する割合</dt>
+                  <dd>{result.damageRate}%</dd>
+                </div>
+              </>
+            )}
           </dl>
 
-          {result.minimumDamageApplied && (
+          {result?.minimumDamageApplied && (
             <p className="notice">
               物理ダメージの最低保証（攻撃力の5%）が適用されています。
+            </p>
+          )}
+
+          {!dealsDamage && (
+            <p className="notice">
+              このオペレーターの通常行動は敵へのダメージではありません。
             </p>
           )}
         </section>
@@ -309,7 +357,8 @@ function App() {
 
       <footer>
         <p>
-          基礎ステータスのみを使用し、信頼度・潜在・モジュールも未反映です。
+          基礎攻撃種別だけを反映し、素質・特性の追加効果・信頼度・潜在・
+          モジュールは未反映です。
         </p>
       </footer>
     </main>
