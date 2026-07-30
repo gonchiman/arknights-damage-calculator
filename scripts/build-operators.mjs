@@ -36,6 +36,36 @@ function getAttackInterval(attribute) {
   return Math.round((attribute.baseAttackTime * 100 * 1000) / attackSpeed) / 1000
 }
 
+function getNormalAttackType(character) {
+  const description = character.description ?? ''
+
+  if (/攻撃しない|攻撃せず/.test(description)) {
+    return 'none'
+  }
+
+  if (description.includes('術ダメージ') || description.includes('術攻撃')) {
+    return 'arts'
+  }
+
+  if (
+    character.profession === 'MEDIC' ||
+    description.includes('味方のHPを回復') ||
+    description.includes('味方を治療') ||
+    description.includes('継続回復')
+  ) {
+    return 'healing'
+  }
+
+  if (
+    character.profession === 'CASTER' ||
+    character.profession === 'SUPPORT'
+  ) {
+    return 'arts'
+  }
+
+  return 'physical'
+}
+
 function toOperator([id, character]) {
   const phases = character.phases.map((phase, phaseIndex) => {
     const keyFrames = [...phase.attributesKeyFrames].sort(
@@ -63,6 +93,7 @@ function toOperator([id, character]) {
     rarity: Number(character.rarity.replace('TIER_', '')),
     profession: character.profession,
     subProfessionId: character.subProfessionId,
+    normalAttackType: getNormalAttackType(character),
     phases,
   }
 }
