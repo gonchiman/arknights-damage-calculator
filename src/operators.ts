@@ -10,6 +10,8 @@ export type Profession =
   | 'CASTER'
   | 'SPECIAL'
 
+export type NormalAttackType = 'physical' | 'arts' | 'healing' | 'none'
+
 export type OperatorPhase = {
   phase: number
   maxLevel: number
@@ -24,6 +26,7 @@ export type Operator = {
   rarity: number
   profession: Profession
   subProfessionId: string
+  normalAttackType: NormalAttackType
   phases: OperatorPhase[]
 }
 
