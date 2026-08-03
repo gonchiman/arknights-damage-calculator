@@ -11,6 +11,35 @@ import {
 } from './operators'
 
 type ProfessionFilter = 'ALL' | Profession
+type RarityFilter = 'ALL' | number
+
+const rarityOptions = [...new Set(operators.map((operator) => operator.rarity))].sort(
+  (a, b) => b - a,
+)
+
+function filterOperators(
+  professionFilter: ProfessionFilter,
+  rarityFilter: RarityFilter,
+  nameQuery: string,
+) {
+  const normalizedQuery = nameQuery
+    .trim()
+    .normalize('NFKC')
+    .toLocaleLowerCase('ja-JP')
+
+  return operators.filter((operator) => {
+    const matchesProfession =
+      professionFilter === 'ALL' || operator.profession === professionFilter
+    const matchesRarity =
+      rarityFilter === 'ALL' || operator.rarity === rarityFilter
+    const matchesName = operator.name
+      .normalize('NFKC')
+      .toLocaleLowerCase('ja-JP')
+      .includes(normalizedQuery)
+
+    return matchesProfession && matchesRarity && matchesName
+  })
+}
 
 const normalAttackLabels: Record<NormalAttackType, string> = {
   physical: '物理ダメージ',
@@ -92,12 +121,41 @@ function SelectField({
   )
 }
 
+function SearchField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="field" htmlFor={id}>
+      <span>{label}</span>
+      <input
+        id={id}
+        className="search-input"
+        type="search"
+        value={value}
+        placeholder="例：アーミヤ"
+        autoComplete="off"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
 function App() {
   const initialPhaseIndex = defaultOperator.phases.length - 1
   const initialPhase = defaultOperator.phases[initialPhaseIndex]
 
   const [professionFilter, setProfessionFilter] =
     useState<ProfessionFilter>('ALL')
+  const [rarityFilter, setRarityFilter] = useState<RarityFilter>('ALL')
+  const [nameQuery, setNameQuery] = useState('')
   const [operatorId, setOperatorId] = useState(defaultOperator.id)
   const [phaseIndex, setPhaseIndex] = useState(initialPhaseIndex)
   const [level, setLevel] = useState(initialPhase.maxLevel)
@@ -105,23 +163,23 @@ function App() {
   const [enemyResistance, setEnemyResistance] = useState(20)
 
   const filteredOperators = useMemo(
-    () =>
-      professionFilter === 'ALL'
-        ? operators
-        : operators.filter(
-            (operator) => operator.profession === professionFilter,
-          ),
-    [professionFilter],
+    () => filterOperators(professionFilter, rarityFilter, nameQuery),
+    [professionFilter, rarityFilter, nameQuery],
   )
 
   const selectedOperator =
     operators.find((operator) => operator.id === operatorId) ?? defaultOperator
-  const selectedPhase =
-    selectedOperator.phases[phaseIndex] ?? selectedOperator.phases.at(-1)!
-  const attack = calculateOperatorAttack(selectedPhase, level)
-  const damageType = selectedOperator.normalAttackType
+  const activeOperator =
+    filteredOperators.find((operator) => operator.id === operatorId) ?? null
+  const selectedPhase = activeOperator
+    ? (activeOperator.phases[phaseIndex] ?? activeOperator.phases.at(-1)!)
+    : null
+  const attack = selectedPhase
+    ? calculateOperatorAttack(selectedPhase, level)
+    : null
+  const damageType = activeOperator?.normalAttackType ?? null
   const dealsDamage = damageType === 'physical' || damageType === 'arts'
-  const result = dealsDamage
+  const result = dealsDamage && attack !== null
     ? calculateDamage({
         attack,
         enemyDefense,
@@ -130,7 +188,7 @@ function App() {
       })
     : null
   const dps =
-    result && selectedPhase.attackInterval !== 0
+    result && selectedPhase && selectedPhase.attackInterval !== 0
       ? result.damage / selectedPhase.attackInterval
       : null
 
@@ -141,19 +199,40 @@ function App() {
     setLevel(operator.phases[nextPhaseIndex].maxLevel)
   }
 
+  const selectFirstMatchIfNeeded = (
+    nextProfession: ProfessionFilter,
+    nextRarity: RarityFilter,
+    nextNameQuery: string,
+  ) => {
+    const nextOperators = filterOperators(
+      nextProfession,
+      nextRarity,
+      nextNameQuery,
+    )
+
+    if (
+      nextOperators.length > 0 &&
+      !nextOperators.some((operator) => operator.id === selectedOperator.id)
+    ) {
+      selectOperator(nextOperators[0])
+    }
+  }
+
   const changeProfession = (value: string) => {
     const nextFilter = value as ProfessionFilter
     setProfessionFilter(nextFilter)
+    selectFirstMatchIfNeeded(nextFilter, rarityFilter, nameQuery)
+  }
 
-    if (nextFilter !== 'ALL' && selectedOperator.profession !== nextFilter) {
-      const firstOperator = operators.find(
-        (operator) => operator.profession === nextFilter,
-      )
+  const changeRarity = (value: string) => {
+    const nextFilter = value === 'ALL' ? 'ALL' : Number(value)
+    setRarityFilter(nextFilter)
+    selectFirstMatchIfNeeded(professionFilter, nextFilter, nameQuery)
+  }
 
-      if (firstOperator) {
-        selectOperator(firstOperator)
-      }
-    }
+  const changeNameQuery = (value: string) => {
+    setNameQuery(value)
+    selectFirstMatchIfNeeded(professionFilter, rarityFilter, value)
   }
 
   const changeOperator = (value: string) => {
@@ -166,7 +245,7 @@ function App() {
 
   const changePhase = (value: string) => {
     const nextPhaseIndex = Number(value)
-    const nextPhase = selectedOperator.phases[nextPhaseIndex]
+    const nextPhase = activeOperator?.phases[nextPhaseIndex]
 
     if (nextPhase) {
       setPhaseIndex(nextPhaseIndex)
@@ -181,7 +260,7 @@ function App() {
           <p className="eyebrow">ARKNIGHTS TOOL</p>
           <h1>ダメージ計算機</h1>
         </div>
-        <span className="version">試作版 v0.2</span>
+        <span className="version">試作版 v0.3</span>
       </header>
 
       <div className="calculator-grid">
@@ -195,6 +274,13 @@ function App() {
           </div>
 
           <div className="fields">
+            <SearchField
+              id="operator-search"
+              label="名前検索"
+              value={nameQuery}
+              onChange={changeNameQuery}
+            />
+
             <SelectField
               id="profession"
               label="職業"
@@ -212,83 +298,115 @@ function App() {
             </SelectField>
 
             <SelectField
-              id="operator"
-              label="オペレーター"
-              value={selectedOperator.id}
-              onChange={changeOperator}
+              id="rarity"
+              label="レアリティ"
+              value={rarityFilter}
+              onChange={changeRarity}
             >
-              {filteredOperators.map((operator) => (
-                <option key={operator.id} value={operator.id}>
-                  ★{operator.rarity} {operator.name}（
-                  {professionLabels[operator.profession]}）
+              <option value="ALL">すべて</option>
+              {rarityOptions.map((rarity) => (
+                <option key={rarity} value={rarity}>
+                  ★{rarity}
                 </option>
               ))}
             </SelectField>
 
             <SelectField
-              id="phase"
-              label="昇進段階"
-              value={phaseIndex}
-              onChange={changePhase}
+              id="operator"
+              label="オペレーター"
+              value={activeOperator?.id ?? ''}
+              onChange={changeOperator}
             >
-              {selectedOperator.phases.map((phase) => (
-                <option key={phase.phase} value={phase.phase}>
-                  昇進{phase.phase}
-                </option>
-              ))}
+              {filteredOperators.length === 0 ? (
+                <option value="">該当するオペレーターはいません</option>
+              ) : (
+                filteredOperators.map((operator) => (
+                  <option key={operator.id} value={operator.id}>
+                    ★{operator.rarity} {operator.name}（
+                    {professionLabels[operator.profession]}）
+                  </option>
+                ))
+              )}
             </SelectField>
 
-            <NumericInput
-              id="level"
-              label={`レベル（1〜${selectedPhase.maxLevel}）`}
-              value={level}
-              onChange={(value) =>
-                setLevel(
-                  Math.min(
-                    Math.max(Math.round(value), 1),
-                    selectedPhase.maxLevel,
-                  ),
-                )
-              }
-              min={1}
-              max={selectedPhase.maxLevel}
-            />
+            <p className="filter-count" aria-live="polite">
+              {filteredOperators.length}人に絞り込み
+            </p>
 
-            <dl className="operator-stats">
-              <div>
-                <dt>基礎攻撃力</dt>
-                <dd>{attack.toLocaleString('ja-JP')}</dd>
-              </div>
-              <div>
-                <dt>攻撃間隔</dt>
-                <dd>{selectedPhase.attackInterval}秒</dd>
-              </div>
-              <div>
-                <dt>通常攻撃</dt>
-                <dd>{normalAttackLabels[damageType]}</dd>
-              </div>
-            </dl>
+            {activeOperator && selectedPhase && attack !== null ? (
+              <>
+                <SelectField
+                  id="phase"
+                  label="昇進段階"
+                  value={phaseIndex}
+                  onChange={changePhase}
+                >
+                  {activeOperator.phases.map((phase) => (
+                    <option key={phase.phase} value={phase.phase}>
+                      昇進{phase.phase}
+                    </option>
+                  ))}
+                </SelectField>
 
-            {dealsDamage && <div className="divider" />}
+                <NumericInput
+                  id="level"
+                  label={`レベル（1〜${selectedPhase.maxLevel}）`}
+                  value={level}
+                  onChange={(value) =>
+                    setLevel(
+                      Math.min(
+                        Math.max(Math.round(value), 1),
+                        selectedPhase.maxLevel,
+                      ),
+                    )
+                  }
+                  min={1}
+                  max={selectedPhase.maxLevel}
+                />
 
-            {damageType === 'physical' && (
-              <NumericInput
-                id="defense"
-                label="敵の防御力"
-                value={enemyDefense}
-                onChange={setEnemyDefense}
-              />
-            )}
+                <dl className="operator-stats">
+                  <div>
+                    <dt>基礎攻撃力</dt>
+                    <dd>{attack.toLocaleString('ja-JP')}</dd>
+                  </div>
+                  <div>
+                    <dt>攻撃間隔</dt>
+                    <dd>{selectedPhase.attackInterval}秒</dd>
+                  </div>
+                  <div>
+                    <dt>通常攻撃</dt>
+                    <dd>
+                      {normalAttackLabels[activeOperator.normalAttackType]}
+                    </dd>
+                  </div>
+                </dl>
 
-            {damageType === 'arts' && (
-              <NumericInput
-                id="resistance"
-                label="敵の術耐性"
-                value={enemyResistance}
-                onChange={setEnemyResistance}
-                max={100}
-                suffix="%"
-              />
+                {dealsDamage && <div className="divider" />}
+
+                {damageType === 'physical' && (
+                  <NumericInput
+                    id="defense"
+                    label="敵の防御力"
+                    value={enemyDefense}
+                    onChange={setEnemyDefense}
+                  />
+                )}
+
+                {damageType === 'arts' && (
+                  <NumericInput
+                    id="resistance"
+                    label="敵の術耐性"
+                    value={enemyResistance}
+                    onChange={setEnemyResistance}
+                    max={100}
+                    suffix="%"
+                  />
+                )}
+              </>
+            ) : (
+              <p className="empty-filter-state">
+                条件に一致するオペレーターがいません。検索条件を変更してください。
+              </p>
             )}
           </div>
         </section>
@@ -303,7 +421,11 @@ function App() {
           </div>
 
           <div className="result-card" aria-live="polite">
-            <p className="result-label">{normalAttackLabels[damageType]}</p>
+            <p className="result-label">
+              {damageType
+                ? normalAttackLabels[damageType]
+                : 'オペレーター未選択'}
+            </p>
             <p className="result-value">
               {result ? result.damage.toLocaleString('ja-JP') : '—'}
             </p>
@@ -349,7 +471,9 @@ function App() {
 
           {!dealsDamage && (
             <p className="notice">
-              このオペレーターの通常行動は敵へのダメージではありません。
+              {activeOperator
+                ? 'このオペレーターの通常行動は敵へのダメージではありません。'
+                : '検索条件を変更してオペレーターを選択してください。'}
             </p>
           )}
         </section>
